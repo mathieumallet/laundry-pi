@@ -68,21 +68,21 @@ while true
         value = values[2]
         throw "Unexpected pin value: #{value}" unless value == "hi" || value == "lo"
         throw "Unexpected pin: #{pin}" unless options[:pins].include?(pin)
-        puts "Raw output from command: #{line}" if options[:verbose]
+        puts "[#{Time.new}]  Raw output from command: #{line}" if options[:verbose]
 
         # Update samples array
         samples = pinsSamples[pin]
         samples.shift # remove first item
         samples.push(value == "hi" ? 1 : 0)
-        puts "Current samples for #{pin}: #{samples}" if options[:verbose]
+        puts "[#{Time.new}]  Current samples for #{pin}: #{samples}" if options[:verbose]
 
         # Calculate new value
         total = samples.sum
         pinIsHigh = total >= options[:numerOfRequiredPositiveSamples]
-        puts "Pin #{pin} calculated state: #{pinIsHigh}" if options[:verbose]
+        puts "[#{Time.new}]  Pin #{pin} calculated state: #{pinIsHigh}" if options[:verbose]
 
         if pinIsHigh != pinsState[pin]
-            puts "Calculated state of pin #{pin} changed to #{pinIsHigh}"
+            puts "[#{Time.new}]  Calculated state of pin #{pin} changed to #{pinIsHigh}"
             pinsState[pin] = pinIsHigh
         end
 
