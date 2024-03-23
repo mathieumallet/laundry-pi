@@ -1,6 +1,9 @@
 #!/usr/bin/env ruby
 
-require 'optparse'
+# This script polls GPIO pins and uses a rolling window to calculate if the
+# pins should be considered 'high' or 'low'. It is meant to clean up the
+# output of a noisy vibration sensor. The computed value is then output by
+# HTTP to a specified port.
 
 # Defaults
 options = {}
@@ -9,6 +12,8 @@ options[:checkPeriod] = 100 # in milliseconds
 options[:samplesCount] = 10
 options[:numerOfRequiredPositiveSamples] = 2
 options[:verbose] = false
+
+require 'optparse'
 
 optparser = OptionParser.new do |opts|
     opts.banner = "Usage: #{$0} [OPTIONS]"
