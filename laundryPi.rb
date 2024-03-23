@@ -8,6 +8,7 @@ options[:command] = "pinctrl"
 options[:checkPeriod] = 100 # in milliseconds
 options[:samplesCount] = 10
 options[:numerOfRequiredPositiveSamples] = 2
+options[:verbose] = false
 
 optparser = OptionParser.new do |opts|
     opts.banner = "Usage: #{$0} [OPTIONS]"
@@ -22,6 +23,7 @@ optparser = OptionParser.new do |opts|
     opts.on('--check-period PERIOD', "Specifies the rate, in milliseconds, at which checks are made. Defaults to #{options[:checkPeriod]} ms.") { |value| options[:checkPeriod] = value.to_i }
     opts.on('--samples-count COUNT', "Specifies the number of samples that are combined together together. Defaults to #{options[:samplesCount]}.") { |value| options[:samplesCount] = value.to_i }
     opts.on('--positive-samples-needed SAMPLES', "Specifies the number of samples that need to be 'high' for the output to be 'true'. Defaults to #{options[:numerOfRequiredPositiveSamples]}.") { |value| options[:numerOfRequiredPositiveSamples] = value.to_i }
+    opts.on('-v', '--verbose', "Log more to the screen.") { options[:verbose] = true }
 end
 optparser.parse!
 
@@ -36,16 +38,17 @@ pinsList = options[:pins].join(",")
 
 # TODO: print settings on launch
 
-pinsData = {}
+pinsSamples = {}
+pinsState = {}
 for pin in options[:pins]
     samples = Array.new(options[:samplesCount], 0)
-    pinsData[pin] = samples
+    pinsSamples[pin] = samples
+    pinsState[pin] = false
 end
 
 # Main loop
 while true
     # Query values
-    puts "Checking..."
     output = `#{options[:command]} get #{pinsList}`
     throw "Command execution failed: #{options[:command]}" unless output
 
@@ -59,24 +62,30 @@ while true
         value = values[2]
         throw "Unexpected pin value: #{value}" unless value == "hi" || value == "lo"
         throw "Unexpected pin: #{pin}" unless options[:pins].include?(pin)
+        puts "Raw output from command: #{line}" if options[:verbose]
 
         # Update samples array
-        samples = pinsData[pin]
+        samples = pinsSamples[pin]
         samples.shift # remove first item
         samples.push(value == "hi" ? 1 : 0)
-        puts "samples for pin #{pin}: #{samples}"
+        puts "Current samples for #{pin}: #{samples}" if options[:verbose]
 
         # Calculate new value
         total = samples.sum
         pinIsHigh = total >= options[:numerOfRequiredPositiveSamples]
-        puts "pin #{pin} high? #{pinIsHigh}"
+        puts "Pin #{pin} calculated state: #{pinIsHigh}" if options[:verbose]
 
-        # TODO store value and expose to HTTP
+        if pinIsHigh != pinsState[pin]
+            puts "Calculated state of pin #{pin} changed to #{pinIsHigh}"
+            pinsState[pin] = pinIsHigh
+        end
+
+        # TODO expose pinsState to HTTP
     end
 
     # Sleep
     sleep(options[:checkPeriod] / 1000.0)
 
-    puts
+    puts if options[:verbose]
 
 end
