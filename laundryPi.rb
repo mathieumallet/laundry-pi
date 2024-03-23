@@ -12,8 +12,10 @@ options[:checkPeriod] = 100 # in milliseconds
 options[:samplesCount] = 10
 options[:numerOfRequiredPositiveSamples] = 2
 options[:verbose] = false
+options[:port] = 80
 
 require 'optparse'
+require 'socket'
 
 optparser = OptionParser.new do |opts|
     opts.banner = "Usage: #{$0} [OPTIONS]"
@@ -28,6 +30,7 @@ optparser = OptionParser.new do |opts|
     opts.on('--check-period PERIOD', "Specifies the rate, in milliseconds, at which checks are made. Defaults to #{options[:checkPeriod]} milliseconds.") { |value| options[:checkPeriod] = value.to_i }
     opts.on('--samples-count COUNT', "Specifies the number of samples that are combined together together. Defaults to #{options[:samplesCount]}.") { |value| options[:samplesCount] = value.to_i }
     opts.on('--positive-samples-needed SAMPLES', "Specifies the number of samples that need to be 'high' for the output to be 'true'. Defaults to #{options[:numerOfRequiredPositiveSamples]}.") { |value| options[:numerOfRequiredPositiveSamples] = value.to_i }
+    opts.on('--port PORT', "The port on which the results should be offered. Set to 0 to disable the HTTP server. Defaults to #{options[:port]}.") { |value| options[:port] = value.to_i }
     opts.on('-v', '--verbose', "Log more to the screen.") { options[:verbose] = true }
 end
 optparser.parse!
@@ -41,6 +44,7 @@ end
 options[:pins].map!(&:to_i)
 pinsList = options[:pins].join(",")
 
+# Print settings
 puts "Listener started."
 puts "Command: #{options[:command]}"
 puts "Pins: #{options[:pins]}"
@@ -49,6 +53,7 @@ puts "Samples count: #{options[:samplesCount]}"
 puts "Positive samples needed: #{options[:numerOfRequiredPositiveSamples]}"
 puts
 
+# Prepare data objects
 pinsSamples = {}
 pinsState = {}
 for pin in options[:pins]
@@ -57,7 +62,25 @@ for pin in options[:pins]
     pinsState[pin] = false
 end
 
-# Main loop
+# Setup HTTP server
+if options[:port] != 0
+    socket = TCPServer.new(options[:port])
+    throw "Could not open socket on port #{options[:port]}" unless socket
+    Thread.new {
+        puts "Listening for HTTP connections on port #{options[:port]}"
+        while true
+            client = socket.accept
+            request = client.gets
+            client.puts("HTTP/1.1 200\r\n\r\n")
+            pinsState.each{|pin,value|
+                client.puts "Pin #{pin}: #{value}"
+            }
+            client.close
+        end
+    }
+end
+
+# Main querying loop
 while true
     # Query values
     output = `#{options[:command]} get #{pinsList}`
@@ -86,12 +109,11 @@ while true
         pinIsHigh = total >= options[:numerOfRequiredPositiveSamples]
         puts "[#{Time.new}]  Pin #{pin} calculated state: #{pinIsHigh}" if options[:verbose]
 
+        # Notify on console if the value changed (+ update the saved value)
         if pinIsHigh != pinsState[pin]
             puts "[#{Time.new}]  Calculated state of pin #{pin} changed to #{pinIsHigh}"
             pinsState[pin] = pinIsHigh
         end
-
-        # TODO expose pinsState to HTTP
     end
 
     # Sleep
