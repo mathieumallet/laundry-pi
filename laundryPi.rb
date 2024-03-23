@@ -20,7 +20,7 @@ optparser = OptionParser.new do |opts|
     opts.on('-h', '--help', "Prints this message.") { puts optparser.help(); exit 1 }
     opts.on('-c', '--command CMD', "If provided, Uses the specified app to check for pin status. Defaults to '#{options[:command]}'.") { |value| options[:command] = value }
     opts.on('-p pin1,pin2', '--pins pin1,pin2', Array, "Specifies the set of pins to monitor. At least one pin must be specified.") { |list| options[:pins] = list }
-    opts.on('--check-period PERIOD', "Specifies the rate, in milliseconds, at which checks are made. Defaults to #{options[:checkPeriod]} ms.") { |value| options[:checkPeriod] = value.to_i }
+    opts.on('--check-period PERIOD', "Specifies the rate, in milliseconds, at which checks are made. Defaults to #{options[:checkPeriod]} milliseconds.") { |value| options[:checkPeriod] = value.to_i }
     opts.on('--samples-count COUNT', "Specifies the number of samples that are combined together together. Defaults to #{options[:samplesCount]}.") { |value| options[:samplesCount] = value.to_i }
     opts.on('--positive-samples-needed SAMPLES', "Specifies the number of samples that need to be 'high' for the output to be 'true'. Defaults to #{options[:numerOfRequiredPositiveSamples]}.") { |value| options[:numerOfRequiredPositiveSamples] = value.to_i }
     opts.on('-v', '--verbose', "Log more to the screen.") { options[:verbose] = true }
@@ -36,7 +36,13 @@ end
 options[:pins].map!(&:to_i)
 pinsList = options[:pins].join(",")
 
-# TODO: print settings on launch
+puts "Listener started."
+puts "Command: #{options[:command]}"
+puts "Pins: #{options[:pins]}"
+puts "Check period: #{options[:checkPeriod]} milliseconds"
+puts "Samples count: #{options[:samplesCount]}"
+puts "Positive samples needed: #{options[:numerOfRequiredPositiveSamples]}"
+puts
 
 pinsSamples = {}
 pinsState = {}
