@@ -4,6 +4,13 @@
 # pins should be considered 'high' or 'low'. It is meant to clean up the
 # output of a noisy vibration sensor. The computed value is then output by
 # HTTP to a specified port.
+#
+# By default, the HTTP output can be accessed from http://ip:8080/
+#
+# The HTTP output is in the form:
+# Pin 14: false
+# Pin 4: true
+#
 
 # Defaults
 options = {}
@@ -12,7 +19,7 @@ options[:checkPeriod] = 100 # in milliseconds
 options[:samplesCount] = 10
 options[:numerOfRequiredPositiveSamples] = 2
 options[:verbose] = false
-options[:port] = 80
+options[:port] = 8080
 
 require 'optparse'
 require 'socket'
