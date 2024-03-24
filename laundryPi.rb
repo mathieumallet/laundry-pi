@@ -17,7 +17,7 @@ options = {}
 options[:command] = "pinctrl"
 options[:checkPeriod] = 100 # in milliseconds
 options[:samplesCount] = 10
-options[:numerOfRequiredPositiveSamples] = 2
+options[:numberOfRequiredStateChanges] = 4
 options[:verbose] = false
 options[:port] = 8080
 
@@ -36,7 +36,7 @@ optparser = OptionParser.new do |opts|
     opts.on('-p pin1,pin2', '--pins pin1,pin2', Array, "Specifies the set of pins to monitor. At least one pin must be specified.") { |list| options[:pins] = list }
     opts.on('--check-period PERIOD', "Specifies the rate, in milliseconds, at which checks are made. Defaults to #{options[:checkPeriod]} milliseconds.") { |value| options[:checkPeriod] = value.to_i }
     opts.on('--samples-count COUNT', "Specifies the number of samples that are combined together together. Defaults to #{options[:samplesCount]}.") { |value| options[:samplesCount] = value.to_i }
-    opts.on('--positive-samples-needed SAMPLES', "Specifies the number of samples that need to be 'high' for the output to be 'true'. Defaults to #{options[:numerOfRequiredPositiveSamples]}.") { |value| options[:numerOfRequiredPositiveSamples] = value.to_i }
+    opts.on('--state-changes-needed CHANGES', "Specifies the number of state changes in the samples that are needed for the output to be 'true'. Defaults to #{options[:numberOfRequiredStateChanges]}.") { |value| options[:numberOfRequiredStateChanges] = value.to_i }
     opts.on('--port PORT', "The port on which the results should be offered. Set to 0 to disable the HTTP server. Defaults to #{options[:port]}.") { |value| options[:port] = value.to_i }
     opts.on('-v', '--verbose', "Log more to the screen.") { options[:verbose] = true }
 end
@@ -57,16 +57,18 @@ puts "Command: #{options[:command]}"
 puts "Pins: #{options[:pins]}"
 puts "Check period: #{options[:checkPeriod]} milliseconds"
 puts "Samples count: #{options[:samplesCount]}"
-puts "Positive samples needed: #{options[:numerOfRequiredPositiveSamples]}"
+puts "Needed state changes: #{options[:numberOfRequiredStateChanges]}"
 puts
 
 # Prepare data objects
 pinsSamples = {}
-pinsState = {}
+pinsLastState = {}
+pinsComputedState = {}
 for pin in options[:pins]
     samples = Array.new(options[:samplesCount], 0)
     pinsSamples[pin] = samples
-    pinsState[pin] = false
+    pinsLastState[pin] = 0
+    pinsComputedState[pin] = false
 end
 
 # Setup HTTP server
@@ -79,7 +81,7 @@ if options[:port] != 0
             client = socket.accept
             request = client.gets
             client.puts("HTTP/1.1 200\r\n\r\n")
-            pinsState.each{|pin,value|
+            pinsComputedState.each{|pin,value|
                 client.puts "Pin #{pin}: #{value}"
             }
             client.close
@@ -105,21 +107,26 @@ while true
         throw "Unexpected pin: #{pin}" unless options[:pins].include?(pin)
         puts "[#{Time.new}]  Raw output from command: #{line}" if options[:verbose]
 
+        value = value == "hi" ? 1 : 0
+        puts "[#{Time.new}]  Previous pin value: #{pinsLastState[pin]}; new pin value: #{value}" if options[:verbose]
+        valueChanged = pinsLastState[pin] != value ? 1 : 0
+        pinsLastState[pin] = value
+
         # Update samples array
         samples = pinsSamples[pin]
         samples.shift # remove first item
-        samples.push(value == "hi" ? 1 : 0)
+        samples.push(valueChanged)
         puts "[#{Time.new}]  Current samples for #{pin}: #{samples}" if options[:verbose]
 
         # Calculate new value
         total = samples.sum
-        pinIsHigh = total >= options[:numerOfRequiredPositiveSamples]
+        pinIsHigh = total >= options[:numberOfRequiredStateChanges]
         puts "[#{Time.new}]  Pin #{pin} calculated state: #{pinIsHigh}" if options[:verbose]
 
         # Notify on console if the value changed (+ update the saved value)
-        if pinIsHigh != pinsState[pin]
+        if pinIsHigh != pinsComputedState[pin]
             puts "[#{Time.new}]  Calculated state of pin #{pin} changed to #{pinIsHigh}"
-            pinsState[pin] = pinIsHigh
+            pinsComputedState[pin] = pinIsHigh
         end
     end
 
