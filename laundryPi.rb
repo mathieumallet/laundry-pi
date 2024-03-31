@@ -2,22 +2,26 @@
 
 # This script polls GPIO pins and uses a rolling window to calculate if the
 # pins should be considered 'high' or 'low'. It is meant to clean up the
-# output of a noisy vibration sensor. The computed value is then output by
-# HTTP to a specified port.
+# output of a noisy vibration sensor. Those values are then further filtered.
+# The computed value and filtered value are then output by HTTP to a specified
+# port.
 #
 # By default, the HTTP output can be accessed from http://ip:8080/
 #
 # The HTTP output is in the form:
-# Pin 14: false
-# Pin 4: true
+#
+# # Pin NUMBER: CURRENT_STATE, FILTERED_STATE
+# Pin 14: false, true
+# Pin 4: true, true
 #
 
 # Defaults
 options = {}
 options[:command] = "pinctrl"
-options[:checkPeriod] = 100 # in milliseconds
-options[:samplesCount] = 10
-options[:numberOfRequiredStateChanges] = 4
+options[:checkPeriod] = 10 # in milliseconds
+options[:samplesCount] = 1000
+options[:numberOfRequiredStateChanges] = 20
+options[:filterSize] = 30000
 options[:verbose] = false
 options[:port] = 8080
 
@@ -37,6 +41,7 @@ optparser = OptionParser.new do |opts|
     opts.on('--check-period PERIOD', "Specifies the rate, in milliseconds, at which checks are made. Defaults to #{options[:checkPeriod]} milliseconds.") { |value| options[:checkPeriod] = value.to_i }
     opts.on('--samples-count COUNT', "Specifies the number of samples that are combined together together. Defaults to #{options[:samplesCount]}.") { |value| options[:samplesCount] = value.to_i }
     opts.on('--state-changes-needed CHANGES', "Specifies the number of state changes in the samples that are needed for the output to be 'true'. Defaults to #{options[:numberOfRequiredStateChanges]}.") { |value| options[:numberOfRequiredStateChanges] = value.to_i }
+    opts.on('--filter-size SIZE', "Additional filtering done on the output. At least SIZE values must be identical in a row before the filtered output changes. Defaults to #{options[:filterSize]}.") { |value| options[:filterSize] = value.to_i }
     opts.on('--port PORT', "The port on which the results should be offered. Set to 0 to disable the HTTP server. Defaults to #{options[:port]}.") { |value| options[:port] = value.to_i }
     opts.on('-v', '--verbose', "Log more to the screen.") { options[:verbose] = true }
 end
@@ -56,19 +61,24 @@ puts "Listener started."
 puts "Command: #{options[:command]}"
 puts "Pins: #{options[:pins]}"
 puts "Check period: #{options[:checkPeriod]} milliseconds"
-puts "Samples count: #{options[:samplesCount]}"
-puts "Needed state changes: #{options[:numberOfRequiredStateChanges]}"
+puts "Samples count: #{options[:samplesCount]} (#{(options[:checkPeriod] * options[:samplesCount]) / 1000} seconds)"
+puts "Needed state changes: #{options[:numberOfRequiredStateChanges]} (#{options[:numberOfRequiredStateChanges].to_f / options[:samplesCount] * 100} %)"
+puts "Filter size: #{options[:filterSize]} (#{(options[:filterSize] * options[:checkPeriod]) / 1000} seconds)"
 puts
 
 # Prepare data objects
 pinsSamples = {}
 pinsLastState = {}
 pinsComputedState = {}
+pinsFilteredSamples = {}
+pinsFilteredLastState = {}
 for pin in options[:pins]
-    samples = Array.new(options[:samplesCount], 0)
-    pinsSamples[pin] = samples
+    pinsSamples[pin] = Array.new(options[:samplesCount], 0)
     pinsLastState[pin] = 0
     pinsComputedState[pin] = false
+
+    pinsFilteredSamples[pin] = Array.new(options[:filterSize], 0)
+    pinsFilteredLastState[pin] = 0
 end
 
 # Setup HTTP server
@@ -81,8 +91,9 @@ if options[:port] != 0
             client = socket.accept
             request = client.gets
             client.puts("HTTP/1.1 200\r\n\r\n")
+            client.puts("# Pin NUMBER: CURRENT_STATE, FILTERED_STATE")
             pinsComputedState.each{|pin,value|
-                client.puts "Pin #{pin}: #{value}"
+                client.puts "Pin #{pin}: #{value}, #{pinsFilteredLastState[pin] != 0}"
             }
             client.close
         end
@@ -121,13 +132,27 @@ while true
         # Calculate new value
         total = samples.sum
         pinIsHigh = total >= options[:numberOfRequiredStateChanges]
-        puts "[#{Time.new}]  Pin #{pin} calculated state: #{pinIsHigh}" if options[:verbose]
+        puts "[#{Time.new}]  Pin #{pin} calculated state: #{pinIsHigh} (sum of #{total})" if options[:verbose]
 
         # Notify on console if the value changed (+ update the saved value)
         if pinIsHigh != pinsComputedState[pin]
             puts "[#{Time.new}]  Calculated state of pin #{pin} changed to #{pinIsHigh}"
             pinsComputedState[pin] = pinIsHigh
         end
+
+        # Apply filtering
+        samples = pinsFilteredSamples[pin]
+        samples.shift # remove first item
+        samples.push(pinsComputedState[pin] ? 1 : 0)
+        puts "[#{Time.new}]  Current filtered samples for #{pin}: #{samples}" if options[:verbose]
+        sum = samples.sum
+        if sum == 0 || sum == options[:filterSize]
+            if sum != pinsFilteredLastState[pin]
+                puts "[#{Time.new}]  Filtered state of pin #{pin} changed to #{sum == 0 ? false : true}"
+                pinsFilteredLastState[pin] = sum
+            end
+        end
+        puts "[#{Time.new}]  Filtered state of pin #{pin}: #{pinsFilteredLastState[pin] == 0 ? false : true} (sum of #{sum})" if options[:verbose]
     end
 
     # Sleep
